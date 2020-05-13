@@ -1,0 +1,176 @@
+create database PROJEKTOLAKRZYSIAK
+create table klient
+(
+KlientID int IDENTITY (1,1) PRIMARY KEY,
+Imie nvarchar(20),
+Nazwisko nvarchar(20),
+Bonus int default 0
+)
+INSERT INTO klient (Imie, Nazwisko) VALUES
+('Krystian', 'Klawon'),
+('Ola', 'Krzysiak'),
+('Agata', 'Grduszak'),
+('Monika', 'Kostek'),
+('Natalia', 'Rompa'),
+('Sebastian', 'Jermakowicz'),
+('Agnieszka','Strymek'),
+('Ewelina','Tomaszewska'),
+('Dawid','Walaszczyk'),
+('Martyna','Sikorska'),
+('Angelika','Bania'),
+('Sandra','Zasucha'),
+('Joanna','Brzezinska'),
+('Antek','Sobieszewski');
+select * from klient
+create table typFilmu
+(
+TypeID int PRIMARY KEY not null,
+FilmType nvarchar(6),
+Price float not null,
+CHECK (TypeID IN (1,2,3) AND (FilmType='new' OR FilmType='old' OR FilmType='usual'))
+)
+INSERT INTO typFilmu (TypeID, FilmType, Price) VALUES
+('1', 'new', '40'),
+('2', 'usual', '30'),
+('3', 'old', '30');
+select * from typFilmu
+create table film
+(
+FilmID int IDENTITY (1,1) PRIMARY KEY,
+TypeID int null,
+Title nvarchar(50),
+KlientID int null,
+CONSTRAINT FK_klientfilm FOREIGN KEY (KlientID) REFERENCES klient(KlientID),
+CONSTRAINT FK_typfilmufilm FOREIGN KEY (TypeID) REFERENCES typFilmu(TypeID)
+)
+INSERT INTO film (TypeID, Title) VALUES
+(2,'Car'),
+(1,'Car 2'),
+(1,'Car 3'),
+(2,'Sex in the City'),
+(2,'Kevin lost at home'),
+(3,'Spiderman'),
+(3,'Lord of the King'),
+(1,'Harry Potter'),
+(2,'Lost'),
+(3,'House of Cards'),
+(2,'Greys Anatomy'),
+(1,'Gravitation'),
+(1,'Avatar'),
+(3,'Alice in the Wonderland'),
+(1,'Matrix'),
+(3,'Spider Man'),
+(3,'Titanic'),
+(3,'Titanic 2'),
+(2,'300'),
+(2,'Batman'),
+(1,'Joker');
+select * from film
+create table historiaWypozyczen
+(
+RentID int IDENTITY (1,1) PRIMARY KEY,
+KlientID int null,
+FilmID int null,
+RentDate datetime2 default getdate(),
+NrOfDays int null,
+RentPrice float null,
+RealNrOfDays int null,
+DelayCost float null,
+CONSTRAINT FK_klientHistoriaWypozyczen FOREIGN KEY (KlientID) REFERENCES klient(KlientID),
+CONSTRAINT FK_filmHistoriaWypozyczen FOREIGN KEY (FilmID) REFERENCES film(FilmID)
+)
+create procedure wypozyczenieFilmu(@klientID int, @filmID int, @days int)
+	as
+	begin	
+		if not exists (select 1 from Klient k where k.klientID = @klientID)
+		begin
+			print 'Podanego klienta nie ma w bazie, id - ' + convert(nvarchar(5), @klientID)
+			return;
+		end
+		if not exists (select 1 from Film f where f.FilmID = @filmID)
+		begin
+			print 'Wybranego filmu nie ma w bazie, id - ' + convert(nvarchar(5), @filmID);
+			return;
+		end
+		declare @wypKlientId int;
+		set @wypKlientId = (select top 1 klientId from Film f where f.filmID = @filmID)
+		if (@wypKlientId is not null)
+		begin
+			print 'Film wypozyczony klientowi o id ' + convert(nvarchar(5), @wypKlientId)
+			return;
+		end
+		declare @typeID int;
+		set @typeID = (select typeID from Film f where f.filmID = @filmID)
+		if (@typeID=1)
+		begin
+			declare @Price float;
+			set @Price = 40 * @days
+		end
+		if (@typeID=2 and @days<=3)
+		begin
+			set @Price = 30
+		end
+		if (@typeID=2 and @days>3)
+		begin
+			set @Price = 30 + (@days-3)*30
+		end
+		if (@typeID=3 and @days<=5)
+		begin
+			set @Price = 30
+		end
+		if (@typeID=3 and @days>5)
+		begin
+			set @Price = 30 + (@days-5)*30
+		end
+		declare @bonus int;
+		if (@typeID=1)
+		begin
+			set @bonus=2
+		end
+		if (@typeID=2 OR @typeID=3)
+		begin
+			set @bonus=1
+		end
+		update Klient set bonus=@bonus where klientID=@klientID
+		update Film set klientId = @klientId where filmID = @filmId
+		insert into historiaWypozyczen (klientId, filmID, NrOfDays, RentPrice) values (@klientId, @filmID, @days, @Price)
+		print 'Cena filmu wynosi ' + convert(nvarchar(5), @Price)
+	end
+exec dbo.wypozyczeniefilmu @klientID = 4, @filmID=10, @days=5
+select * from klient
+select * from film
+select * from historiaWypozyczen
+create procedure zwrotFilmu(@klientID int, @filmID int, @realdays int)
+	as
+	begin	
+		if not exists (select 1 from Klient k where k.klientID = @klientID)
+		begin
+			print 'Podany klient nie wypożyczył filmu, id klienta - ' + convert(nvarchar(5), @klientID)
+			return;
+		end
+		if not exists (select 1 from Film f where f.FilmID = @filmID)
+		begin
+			print 'Podany film nie został wypożyczony, id filmu - ' + convert(nvarchar(5), @filmID);
+			return;
+		end
+		declare @typeID float;
+		set @typeID = (select typeID from Film f where f.filmID = @filmID)
+		declare @days int;
+		set @days = (select NrofDays from historiaWypozyczen h where h.filmID=@filmID)
+		if (@typeID=1)
+		begin
+			declare @DelayCost float;
+			set @DelayCost=(@realdays-@days)*40
+		end
+		if (@typeID=2 or @typeID=3)
+		begin
+			set @DelayCost=(@realdays-@days)*30
+		end
+		update historiaWypozyczen set RealNrofDays=@realdays where FilmID=@filmID
+		update historiaWypozyczen set DelayCost=@DelayCost where FilmID=@filmID
+		print 'Cena dodatkowa za wypożyczony film w dniu zwrotu wynosi ' + convert(nvarchar(5), @DelayCost)
+	end
+exec dbo.zwrotFilmu @klientID = 4, @filmID=10, @realdays=7
+select * from klient
+select * from film
+select * from historiaWypozyczen
